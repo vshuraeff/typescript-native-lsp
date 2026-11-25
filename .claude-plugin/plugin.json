@@ -1,0 +1,49 @@
+{
+  "name": "typescript-native-lsp",
+  "displayName": "TypeScript Native LSP",
+  "version": "1.0.0",
+  "description": "TypeScript and JavaScript code intelligence in Claude Code from the language server built into the native TypeScript 7 compiler (tsc --lsp --stdio), with a relay that turns its pulled diagnostics into the pushed ones Claude Code reads",
+  "author": {
+    "name": "vshuraeff",
+    "url": "https://github.com/vshuraeff"
+  },
+  "homepage": "https://github.com/vshuraeff/typescript-native-lsp#readme",
+  "repository": "https://github.com/vshuraeff/typescript-native-lsp",
+  "license": "MIT",
+  "keywords": [
+    "typescript",
+    "javascript",
+    "lsp",
+    "language-server",
+    "typescript-7",
+    "tsgo",
+    "diagnostics"
+  ],
+  "icon": "./.claude-plugin/icon.png",
+  "network": {
+    "hosts": []
+  },
+  "lspServers": {
+    "typescript": {
+      "command": "bun",
+      "args": [
+        "--no-env-file",
+        "--config=${CLAUDE_PLUGIN_ROOT}/bunfig.toml",
+        "${CLAUDE_PLUGIN_ROOT}/server/relay.ts",
+        "tsc",
+        "--lsp",
+        "--stdio"
+      ],
+      "extensionToLanguage": {
+        ".ts": "typescript",
+        ".tsx": "typescriptreact",
+        ".js": "javascript",
+        ".jsx": "javascriptreact",
+        ".mts": "typescript",
+        ".cts": "typescript",
+        ".mjs": "javascript",
+        ".cjs": "javascript"
+      }
+    }
+  }
+}

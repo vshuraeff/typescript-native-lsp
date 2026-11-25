@@ -1,0 +1,2 @@
+# the relay starts with --config pointing here, so a project's own bunfig.toml (its preload
+# above all, which could write to stdout and corrupt the lsp stream) never runs in the relay
