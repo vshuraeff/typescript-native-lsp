@@ -11,7 +11,8 @@
 // event, so a test can follow it across relay restarts; while <STUB_LOG>.down exists it fails to start,
 // and while <STUB_LOG>.initerror exists it answers initialize with an error. with STUB_REGISTER set
 // it sends client/registerCapability after initialized, and with STUB_REFRESH_MS set it sends
-// workspace/diagnostic/refresh every that many milliseconds once initialized
+// workspace/diagnostic/refresh every that many milliseconds once initialized. a $/test/ask
+// notification makes it send a request under the given id, and $/test/cancel cancels that request
 import { appendFileSync, existsSync } from 'node:fs'
 
 import { encode, frames, isMessage } from '../server/relay'
@@ -74,6 +75,8 @@ for await (const value of frames(Bun.stdin.stream())) {
     // name whether the cancel is for the answer the stub holds
     const cancelled = (params as { id?: unknown } | undefined)?.id
     log(held && cancelled === held.id ? 'cancelled held' : 'cancelled other')
+  } else if (method === '$/test/cancel') {
+    send({ method: '$/cancelRequest', params: { id: (params as { id?: unknown } | undefined)?.id } })
   } else if (method === '$/test/ask') {
     const asked = String((params as { id?: unknown } | undefined)?.id)
     log(`asked ${asked}`)
