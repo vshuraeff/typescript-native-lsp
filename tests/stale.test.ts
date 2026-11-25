@@ -46,6 +46,7 @@ async function session(mode: string, opts: { bunFlags?: string[]; cwd?: string; 
         asked.push(value.id)
         note(`client got ${value.method}`)
       }
+      if (value.method === '$/cancelRequest') note(`client got cancel ${String((value.params as { id?: unknown }).id)}`)
       if (value.method === 'window/logMessage') note(`log ${(value.params as { message: string }).message}`)
       if (value.method === 'textDocument/publishDiagnostics') {
         const p = value.params as Published
@@ -517,5 +518,55 @@ test('the client sees the first server registration once across a restart', asyn
     await eventually(() => lifecycle(log).filter((l) => l === 'answered stub-register').length === 2, 'the local answer')
     await s.stop()
     expect(s.events.filter((e) => e === 'client got client/registerCapability').length).toBe(1)
+  })
+}, 10000)
+
+test('a refresh answered while the idle stop waits for a pull is made up when a client message cancels the stop', async () => {
+  await inProject(async (file) => {
+    const { path: log } = file('stub.log', '')
+    // the stub refreshes at 1.2 s; its pull answers at about 1.65 s, past the one second idle period
+    const s = await session('slow-pull', { env: { ...idle(log).env, STUB_REFRESH_MS: '1200' } })
+    const pulls = (): number => lifecycle(log).filter((l) => l === `pull ${a}`).length
+    s.send(open(a))
+    await eventually(() => lifecycle(log).includes('answered stub-refresh'), 'the refresh')
+    expect(pulls()).toBe(1)
+    await s.ask(a)
+    await eventually(() => pulls() === 2, 'the pull that makes up the refresh')
+    // the second pull must come from the same server, not from a restart that reopens the document
+    expect(lifecycle(log).filter((l) => l === 'start').length).toBe(1)
+    expect(lifecycle(log)).not.toContain('shutdown')
+    await s.stop()
+  })
+}, 10000)
+
+test('a client answer to a server request that comes while the server stops is not written to it', async () => {
+  await inProject(async (file) => {
+    const { path: log } = file('stub.log', '')
+    const s = await session('slow-shutdown', idle(log))
+    s.send({ method: '$/test/ask', params: { id: 'q' } })
+    await s.seen('client got workspace/configuration')
+    await eventually(() => lifecycle(log).includes('shutdown'), 'the idle stop')
+    s.send({ id: s.asked[0] ?? null, result: ['late'] })
+    await eventually(() => lifecycle(log).includes('exit'), 'the exit')
+    await s.stop()
+    expect(lifecycle(log).filter((l) => l.startsWith('answered'))).toEqual([])
+  })
+}, 10000)
+
+test('a server cancel reaches the client under the id the client knows the request by', async () => {
+  await inProject(async (file) => {
+    const { path: log } = file('stub.log', '')
+    const s = await session('plain', { env: { STUB_LOG: log } })
+    s.send({ method: '$/test/ask', params: { id: 'q' } })
+    await s.seen('client got workspace/configuration')
+    s.send({ method: '$/test/cancel', params: { id: 'q' } })
+    await s.seen('client got cancel')
+    expect(s.asked[0]).not.toBe('q')
+    expect(s.events).toContain(`client got cancel ${String(s.asked[0])}`)
+    // the client still answers a cancelled request, and that answer reaches the server under its own id
+    s.send({ id: s.asked[0] ?? null, result: ['late'] })
+    await s.ask(a)
+    await s.stop()
+    expect(lifecycle(log).filter((l) => l.startsWith('answered'))).toEqual(['answered q ["late"]'])
   })
 }, 10000)

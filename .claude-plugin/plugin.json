@@ -1,7 +1,7 @@
 {
   "name": "typescript-native-lsp",
   "displayName": "TypeScript Native LSP",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "TypeScript and JavaScript code intelligence in Claude Code from the language server built into the native TypeScript 7 compiler (tsc --lsp --stdio), with a relay that turns its pulled diagnostics into the pushed ones Claude Code reads",
   "author": {
     "name": "vshuraeff",

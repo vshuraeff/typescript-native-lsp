@@ -358,10 +358,18 @@ export function main(argv: string[]): void {
   // never stop. a client request waiting for its answer holds the stop off; pulls scheduled or in
   // flight when the period runs out delay it until they settle, so their diagnostics are published
   let idleDue = false
+  // a refresh answered while the stop waits starts no pull; when a client message cancels the stop,
+  // the refresh is made up, and a start pulls every document anyway
+  let refreshMissed = false
   const activity = (): void => {
     if (idleTimer) clearTimeout(idleTimer)
     idleTimer = undefined
     idleDue = false
+    if (refreshMissed) {
+      refreshMissed = false
+      newRound()
+      schedulePull()
+    }
     if (idleMs > 0 && state === 'running' && inflight.size === 0 && initParams !== undefined && !closed) {
       idleTimer = setTimeout(idleStop, idleMs)
     }
@@ -375,6 +383,8 @@ export function main(argv: string[]): void {
     if (idleDue) return
     newRound()
     state = 'stopping'
+    // an answer the client still owes the stopping server goes nowhere
+    serverRequests.clear()
     ownId = `${RELAY_ID_PREFIX}shutdown-${++seq}`
     write(c, { jsonrpc: '2.0', id: ownId, method: 'shutdown' })
     lifecycleTimer = setTimeout(() => c.proc.kill('SIGKILL'), KILL_AFTER_MS)
@@ -385,6 +395,7 @@ export function main(argv: string[]): void {
     restarted = true
     generation++
     serverRequests.clear()
+    refreshMissed = false
     try {
       conn = spawnServer()
     } catch {
@@ -477,14 +488,24 @@ export function main(argv: string[]): void {
         continue
       }
       // once the client pulls itself, the refresh is its business and is forwarded; one that comes
-      // after the idle period ran out waits for the next start, which pulls every document anyway
+      // after the idle period ran out is made up when the stop is cancelled (see activity)
       if (msg.method === 'workspace/diagnostic/refresh' && msg.id !== undefined && !clientPulls) {
         write(c, { jsonrpc: '2.0', id: msg.id, result: null })
-        if (!idleDue) {
+        if (idleDue) refreshMissed = true
+        else {
           newRound()
           schedulePull()
         }
         continue
+      }
+      // the server cancels its own request by the id it asked with, which the client knows scoped;
+      // the client still answers a cancelled request, so the mapping stays until that answer
+      if (msg.method === '$/cancelRequest' && msg.id === undefined && isRecord(msg.params)) {
+        const id = `${generation}:${JSON.stringify(msg.params['id'])}`
+        if (serverRequests.has(id)) {
+          toClient({ ...msg, params: { ...msg.params, id } })
+          continue
+        }
       }
       if (initializeId !== undefined && msg.id === initializeId && msg.method === undefined) {
         const caps = isRecord(msg.result) ? msg.result['capabilities'] : undefined
